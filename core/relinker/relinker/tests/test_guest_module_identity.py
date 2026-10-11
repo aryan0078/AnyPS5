@@ -147,7 +147,7 @@ def main():
 
         for windows in (True, False):
             for tag in (0x6100000d, 0x61000043):
-                for suffix in ('.suprx', '.prx', '.sprx'):
+                for suffix in ('.suprx', '.prx', '.sprx', '.debug_prx'):
                     request = 'libGuest' + suffix
                     result, output = convert(f'{windows}-{tag}-{suffix}', windows, request,
                         providers={'renamed.prx': declared_provider(22, ('libGuest',), tag=tag)}, guest_request=request)
