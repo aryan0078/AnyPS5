@@ -23,7 +23,7 @@ constexpr std::size_t Tiles = HtileBytes / 4u;
 alignas(4096) std::array<float, Width * Height * 2> Depth{};
 alignas(4096) std::array<float, Width * Height> StencilDepth{};
 alignas(4096) std::array<std::uint8_t, Width * Height> Stencil{};
-alignas(256) std::array<std::uint32_t, 1024> Htile{};
+alignas(256) std::array<std::uint32_t, Tiles> Htile{};
 
 void Fill(std::uint32_t word, std::size_t count = Tiles) {
     std::fill_n(Htile.begin(), count, word);

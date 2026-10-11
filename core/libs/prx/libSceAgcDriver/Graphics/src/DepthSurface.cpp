@@ -444,7 +444,7 @@ std::uint32_t expandedHtileWord(std::uint32_t word, bool stencilInHtile, VkImage
 
 void noteHtileWrites(DepthSurface& surface, const DepthTarget& target) {
     if (target.htileAddress == 0) return;
-    const auto tiles = static_cast<std::size_t>((target.extent.width + 7u) / 8u) * ((target.extent.height + 7u) / 8u);
+    const auto tiles = static_cast<std::size_t>(HtileMetadataBytes(target.extent) / 4u);
     const auto bytes = tiles * 4u;
     if (!GuestMemory::Accessible(reinterpret_cast<const void*>(target.htileAddress), bytes, true)) return;
     const auto collected = GuestMemory::CollectWrites(target.htileAddress, bytes);
