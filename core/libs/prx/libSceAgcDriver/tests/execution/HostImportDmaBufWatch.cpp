@@ -53,10 +53,7 @@ int main() {
             filled = device->FillBuffer(address, FillBytes, pattern);
             device->WaitIdle();
         }
-        if (!filled) {
-            std::printf("skipped, the device does not import guest memory\n");
-            return VulkanTestSkipped;
-        }
+        Require(filled, "dma-buf watch: FillBuffer failed despite dma-buf import support");
         Require(std::memcmp(memory, pattern.data(), sizeof(pattern)) == 0, "dma-buf watch: the fill did not reach the mapped memory");
 
         AgcDriver::Graphics::Context probe{};
