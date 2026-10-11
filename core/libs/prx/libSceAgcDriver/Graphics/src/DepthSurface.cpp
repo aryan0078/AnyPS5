@@ -671,7 +671,7 @@ bool DepthSurfaceAt(const Context& context, std::span<const std::uint32_t> words
     std::lock_guard lock(surfacesMutex());
     const auto& list = surfaces();
     const auto found = std::find_if(list.rbegin(), list.rend(), [&](const auto& surface) {
-        return surface->context.device == context.device && (surface->target.address == resource.baseAddress || (surface->target.stencilAddress != 0 && surface->target.stencilAddress == resource.baseAddress));
+        return surface->context.device == context.device && !surface->retired && (surface->target.address == resource.baseAddress || (surface->target.stencilAddress != 0 && surface->target.stencilAddress == resource.baseAddress));
     });
     if (found == list.rend()) return false;
     const auto& target = (*found)->target;

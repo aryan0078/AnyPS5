@@ -208,6 +208,8 @@ void Run(const Context& context) {
     DepthSurfaceView(context, Depth(shared, wideExtent));
     DepthSurfaceView(context, Depth(shared));
     DepthSurfaceView(context, Depth(shared, wideExtent));
+    Require(DepthSurfaceAt(context, {}, sharedWide), "the active older depth surface was missed by descriptor lookup");
+    Require(!DepthSurfaceAt(context, {}, sharedExact), "descriptor lookup selected a retired depth surface at the same address");
     Require(Sample(context, sharedWide) != nullptr, "two depth surfaces at one address, the older one bound last, then its own view: it did not serve it");
     Require(Sample(context, sharedExact) == nullptr, "two depth surfaces at one address, the older one bound last, then the other's view: the overlapped depth surface served it");
     DepthSurfaceView(context, Depth(shared));
