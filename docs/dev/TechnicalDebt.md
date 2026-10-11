@@ -1,5 +1,7 @@
 # Project technical debt
 
+- [Reused depth storage](../../core/libs/prx/libSceAgcDriver/Graphics/src/ShaderResources.cpp): a storage view with another extent or a format that cannot hold the cached depth plane uses guest memory. Depth rendering is not written back to those guest bytes; this admission rule does not prove allocation reuse or preserve a depth writer through an incompatible view. Matching depth/stencil storage access still throws.
+
 ### Build
 
 - Building on Windows requires a specific version of mingw - MinGW-w64 GCC 15.2.0 (`winlibs-gcc15`, `x86_64-ucrt-posix-seh`)
