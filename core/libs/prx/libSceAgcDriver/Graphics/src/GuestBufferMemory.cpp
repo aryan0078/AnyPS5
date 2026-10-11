@@ -173,8 +173,8 @@ HostImports& Imports() {
     return imports;
 }
 
-bool selectedImportUnwatched(const HostImports& state) {
-    return state.importKind == ImportKind::DmaBuf ? state.unwatchDmaBufImports : state.unwatchImports;
+ImportKind selectedImportKind(const HostImports& state) {
+    return state.importKind;
 }
 
 void destroyImport(const Context& context, const HostImport& entry) {
@@ -456,17 +456,20 @@ const char* createChunkedDmaBufImport(const Context& context, HostImport& entry,
 }
 #endif
 
-const char* createImport(const Context& context, HostImport& entry, VkResult& failure, ImportKind kind) {
+const char* createImport(const Context& context, HostImport& entry, VkResult& failure, ImportKind kind, bool& unavailable) {
+    unavailable = false;
     if (kind == ImportKind::HostPointer) return createHostPointerImport(context, entry, failure);
 #ifndef _WIN32
     if (!context.dmaBufImport) {
         failure = VK_ERROR_INVALID_EXTERNAL_HANDLE;
+        unavailable = true;
         return "dma-buf import support";
     }
     int file = -1;
     std::uint64_t offset = 0;
     if (!GuestArena::GuestArenaSharedBacking_nid_postfix(static_cast<std::uintptr_t>(entry.base), static_cast<std::size_t>(entry.bytes), &file, &offset)) {
         failure = VK_ERROR_INVALID_EXTERNAL_HANDLE;
+        unavailable = true;
         return "shared backing lookup";
     }
     bool fits = false;
@@ -484,6 +487,7 @@ const char* createImport(const Context& context, HostImport& entry, VkResult& fa
     return createDmaBufImport(context, entry, file, offset, failure);
 #else
     failure = VK_ERROR_INVALID_EXTERNAL_HANDLE;
+    unavailable = true;
     return "dma-buf imports are unavailable on Windows";
 #endif
 }
@@ -556,6 +560,7 @@ void decideImportWatch(const Context& context, HostImports& state) {
     state.dmaBufImportsStampPages = dmaBuf.writtenAtImport != 0;
     std::fprintf(stderr, "[write-watch] dma-buf imports keep write protection: %s (%u of %u scratch pages written after a GPU read, %u after a GPU write, %u after the import, %u seen after a CPU store); imported ranges %s\n", state.unwatchDmaBufImports ? "no" : "yes", dmaBuf.writtenAfterSubmit, dmaBuf.pages, dmaBuf.writtenAfterFill, dmaBuf.writtenAtImport, dmaBuf.writtenByCpu, state.unwatchDmaBufImports ? "are compared" : "stay watched");
     state.importKind = state.unwatchImports && !state.unwatchDmaBufImports ? ImportKind::DmaBuf : ImportKind::HostPointer;
+
 #endif
 }
 
@@ -719,21 +724,23 @@ const HostImport* importAllocation(const Context& context, HostImports& state, s
     decideImportWatch(context, state);
     VkResult result = VK_SUCCESS;
     const char* step = nullptr;
+    bool unavailable = false;
     GuestMemory::ImportWatched(base, bytes, [&] {
-        step = createImport(context, entry, result, state.importKind);
+        step = createImport(context, entry, result, selectedImportKind(state), unavailable);
         return step == nullptr;
     });
-    entry.unwatched = step == nullptr && selectedImportUnwatched(state);
+    entry.unwatched = step == nullptr && (entry.dmaBuf ? state.unwatchDmaBufImports : state.unwatchImports);
 #ifdef _WIN32
     if (entry.alias != nullptr) entry.unwatched = false;
 #endif
     if (entry.unwatched) GuestMemory::Unwatch(base, bytes);
     if (step != nullptr) {
-        const char* const kind = state.importKind == ImportKind::DmaBuf ? "dma-buf" : "host-pointer";
 #ifdef _WIN32
         GuestArena::GuestArenaUnmapAlias_nid_postfix(entry.alias);
 #endif
-        std::fprintf(stderr, "[gpu] %s import of 0x%llx+0x%llx failed at %s (%d); no alternate import path will be tried\n", kind, static_cast<unsigned long long>(base), static_cast<unsigned long long>(bytes), step, static_cast<int>(result));
+        const ImportKind kind = selectedImportKind(state);
+        const char* const kindName = kind == ImportKind::DmaBuf ? "dma-buf" : "host-pointer";
+        std::fprintf(stderr, "[gpu] %s import of 0x%llx+0x%llx failed at %s (%d)\n", kindName, static_cast<unsigned long long>(base), static_cast<unsigned long long>(bytes), step, static_cast<int>(result));
 #ifdef _WIN32
         static const bool trace = std::getenv("APS5_TRACE_HOST_IMPORT") != nullptr;
         for (std::uint64_t cursor = base; trace && cursor < base + bytes;) {
@@ -756,8 +763,18 @@ const HostImport* importAllocation(const Context& context, HostImports& state, s
             std::fclose(maps);
         }
 #endif
+        if (unavailable) {
+            state.failed.insert(base);
+            std::fprintf(stderr, "[gpu] %s import of 0x%llx+0x%llx is unavailable (%s); the range is served by copies\n", kindName, static_cast<unsigned long long>(base), static_cast<unsigned long long>(bytes), step);
+            return nullptr;
+        }
+        if (kind == ImportKind::HostPointer) {
+            state.failed.insert(base);
+            std::fprintf(stderr, "[gpu] host-pointer import of 0x%llx+0x%llx failed at %s (%d) and is not retried; the range is served by copies\n", static_cast<unsigned long long>(base), static_cast<unsigned long long>(bytes), step, static_cast<int>(result));
+            return nullptr;
+        }
         char message[256];
-        std::snprintf(message, sizeof(message), "AGC graphics: %s import of 0x%llx+0x%llx failed at %s (%d)", kind, static_cast<unsigned long long>(base), static_cast<unsigned long long>(bytes), step, static_cast<int>(result));
+        std::snprintf(message, sizeof(message), "AGC graphics: %s import of 0x%llx+0x%llx failed at %s (%d)", kindName, static_cast<unsigned long long>(base), static_cast<unsigned long long>(bytes), step, static_cast<int>(result));
         throw std::runtime_error(message);
     }
     static std::uint64_t importedBytes = 0;
@@ -1940,13 +1957,20 @@ ImportWatch PrepareImportWatch(const Context& context) {
     auto& state = Imports();
     std::lock_guard lock(state.mutex);
     decideImportWatch(context, state);
-    return selectedImportUnwatched(state) ? ImportWatch::Unwatch : ImportWatch::Watch;
+    return state.unwatchImports ? ImportWatch::Unwatch : ImportWatch::Watch;
+}
+
+bool DmaBufImportSelected(const Context& context) {
+    auto& state = Imports();
+    std::lock_guard lock(state.mutex);
+    decideImportWatch(context, state);
+    return selectedImportKind(state) == ImportKind::DmaBuf;
 }
 
 namespace {
 
 bool stampsWatchedPages(const HostImports& state) {
-    return !selectedImportUnwatched(state) && (state.importKind == ImportKind::DmaBuf ? state.dmaBufImportsStampPages : state.importsStampPages);
+    return (!state.unwatchImports && state.importsStampPages) || (!state.unwatchDmaBufImports && state.dmaBufImportsStampPages);
 }
 
 }
@@ -1970,6 +1994,7 @@ void SetImportWatch(const Context& context, ImportWatch watch) {
     state.watchDevice = context.device;
     state.unwatchImports = watch == ImportWatch::Unwatch;
     state.unwatchDmaBufImports = state.unwatchImports;
+    state.importKind = ImportKind::HostPointer;
 }
 
 void SetHostImportWindow(std::uint64_t bytes) {
@@ -2010,7 +2035,12 @@ bool ImportMappedRanges(const Context& context, const GuestAllocations::Mapped& 
     for (const auto& mapped : ranges) {
         const auto range = mapped.lock();
         if (range == nullptr || leasedRangeOwner(current, range->address) != range) continue;
-        if (importAllocation(context, state, range->address, current) == nullptr && GuestAllocations::GuestAllocationsGeneration_nid_postfix() != generation) state.failed.erase(importRun(current, range->address).base);
+        try {
+            if (importAllocation(context, state, range->address, current) == nullptr && GuestAllocations::GuestAllocationsGeneration_nid_postfix() != generation) state.failed.erase(importRun(current, range->address).base);
+        } catch (const std::exception& error) {
+            if (selectedImportKind(state) == ImportKind::DmaBuf) throw;
+            std::fprintf(stderr, "[gpu] import of GPU memory mapped at 0x%llx+0x%zx failed: %s\n", static_cast<unsigned long long>(range->address), range->bytes, error.what());
+        }
     }
     return true;
 }

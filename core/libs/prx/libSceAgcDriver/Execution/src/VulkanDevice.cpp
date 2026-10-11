@@ -3236,8 +3236,8 @@ VkDevice VulkanDevice::Device() const {
     return state->device;
 }
 
-bool VulkanDevice::DmaBufImportSupported() const {
-    return state->dmaBufImport;
+bool VulkanDevice::DmaBufImportSelected() const {
+    return Graphics::DmaBufImportSelected(graphicsContext());
 }
 
 bool VulkanDevice::DispatchRecipes() {

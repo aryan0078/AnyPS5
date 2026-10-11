@@ -41,8 +41,8 @@ int main() {
 
         auto device = OpenVulkanTestDevice();
         if (!device) return VulkanTestSkipped;
-        if (!device->DmaBufImportSupported()) {
-            std::printf("skipped, the device does not import guest memory through dma-buf\n");
+        if (!device->DmaBufImportSelected()) {
+            std::printf("skipped, the probe did not select dma-buf as this device's import kind\n");
             return VulkanTestSkipped;
         }
 
@@ -53,7 +53,7 @@ int main() {
             filled = device->FillBuffer(address, FillBytes, pattern);
             device->WaitIdle();
         }
-        Require(filled, "dma-buf watch: FillBuffer failed despite dma-buf import support");
+        Require(filled, "dma-buf watch: FillBuffer failed with dma-buf as the selected import kind");
         Require(std::memcmp(memory, pattern.data(), sizeof(pattern)) == 0, "dma-buf watch: the fill did not reach the mapped memory");
 
         AgcDriver::Graphics::Context probe{};
