@@ -128,19 +128,20 @@ def main():
             assert output.exists(), output
 
             for directory in ("sce_module", "sce_modules", "prx"):
-                case = work / f"{windows}-debug-name-{directory.replace('/', '-')}"
-                (case / directory).mkdir(parents=True)
-                (case / directory / "needed.prx").write_bytes(module_with_symbol(True))
-                result, output = convert(case, windows, b"needed.debug_prx")
-                assert result.returncode == 0, (result.stdout, result.stderr)
-                artifact = case / "app0" / directory / "needed.prx.guest.prx"
-                assert list((case / "app0").rglob("*.guest.prx")) == [artifact], list((case / "app0").rglob("*"))
-                if windows and os.name == "nt":
-                    run = subprocess.run([str(output)], capture_output=True, text=True, timeout=30)
-                    assert run.returncode == 42, (run.returncode, run.stdout, run.stderr)
-                if not windows:
-                    needed = needed_libraries(output.read_bytes())
-                    assert needed == [f"$ORIGIN/app0/{directory}/needed.prx.guest.prx"], needed
+                for suffix in ("debug_prx", "suprx"):
+                    case = work / f"{windows}-{suffix}-name-{directory.replace('/', '-')}"
+                    (case / directory).mkdir(parents=True)
+                    (case / directory / "needed.prx").write_bytes(module_with_symbol(True))
+                    result, output = convert(case, windows, b"needed." + suffix.encode())
+                    assert result.returncode == 0, (result.stdout, result.stderr)
+                    artifact = case / "app0" / directory / "needed.prx.guest.prx"
+                    assert list((case / "app0").rglob("*.guest.prx")) == [artifact], list((case / "app0").rglob("*"))
+                    if windows and os.name == "nt":
+                        run = subprocess.run([str(output)], capture_output=True, text=True, timeout=30)
+                        assert run.returncode == 42, (run.returncode, run.stdout, run.stderr)
+                    if not windows:
+                        needed = needed_libraries(output.read_bytes())
+                        assert needed == [f"$ORIGIN/app0/{directory}/needed.prx.guest.prx"], needed
 
             if windows:
                 case = work / "debug-name-case"
