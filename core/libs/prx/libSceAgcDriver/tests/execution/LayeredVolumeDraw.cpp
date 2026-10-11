@@ -251,8 +251,10 @@ void Check(const std::byte* volume, const AgcDriver::Graphics::ColorTarget& colo
 
 }
 
-int main() {
+int main(int argc, char** argv) {
     try {
+        const bool vertexOnly = argc == 2 && std::strcmp(argv[1], "--vertex-only") == 0;
+        Require(argc == 1 || vertexOnly, "usage: layered volume draw [--vertex-only]");
         const auto device = OpenVulkanTestDevice();
         if (!device) return VulkanTestSkipped;
         const auto target = device->Target();
@@ -265,7 +267,8 @@ int main() {
         const auto color = VolumeTarget(volume.Data());
         Run(*device, color, false);
         Check(volume.Data(), color, "vertex draw");
-        if (target.mesh.has_value()) Run(*device, color, true);
+        if (vertexOnly) std::puts("layered volume vertex draw tests passed");
+        else if (target.mesh.has_value()) Run(*device, color, true);
         else std::puts("mesh case skipped, the device has no VK_EXT_mesh_shader");
         std::puts("layered volume draw tests passed");
         return 0;

@@ -543,7 +543,7 @@ void Pipeline::Begin(VkCommandBuffer commands, const Framebuffer& framebuffer, V
         }
         VkRenderingInfoKHR rendering{VK_STRUCTURE_TYPE_RENDERING_INFO_KHR};
         rendering.renderArea = {{0, 0}, extent};
-        rendering.layerCount = 1;
+        rendering.layerCount = state.renderLayers;
         rendering.colorAttachmentCount = static_cast<std::uint32_t>(colors.size());
         rendering.pColorAttachments = colors.empty() ? nullptr : colors.data();
         if (depthFormat != VK_FORMAT_UNDEFINED) rendering.pDepthAttachment = &depth;
